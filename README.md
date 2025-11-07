@@ -23,7 +23,7 @@ A Neovim plugin that provides SQL syntax highlighting and formatting for templat
 
 ```lua
 {
-  "yourusername/ts-sql.nvim",
+  "RielJ/ts-sql.nvim",
   dependencies = { "nvim-treesitter/nvim-treesitter" },
   ft = { "typescript", "javascript", "typescriptreact", "javascriptreact" },
   config = function()
@@ -38,7 +38,7 @@ A Neovim plugin that provides SQL syntax highlighting and formatting for templat
 
 ```lua
 use {
-  "yourusername/ts-sql.nvim",
+  "RielJ/ts-sql.nvim",
   requires = { "nvim-treesitter/nvim-treesitter" },
   ft = { "typescript", "javascript", "typescriptreact", "javascriptreact" },
   config = function()
@@ -51,7 +51,7 @@ use {
 
 ```vim
 Plug 'nvim-treesitter/nvim-treesitter'
-Plug 'yourusername/ts-sql.nvim'
+Plug 'RielJ/ts-sql.nvim'
 ```
 
 Then in your `init.lua`:
