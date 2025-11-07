@@ -1,0 +1,12 @@
+# Vim swap files
+*.swp
+*.swo
+*~
+
+# macOS
+.DS_Store
+
+# Tags
+tags
+tags.lock
+tags.temp
