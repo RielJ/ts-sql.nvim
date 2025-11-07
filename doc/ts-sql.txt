@@ -1,0 +1,226 @@
+*ts-sql.txt*  SQL syntax highlighting and formatting for TypeScript/JavaScript
+
+Author: Your Name
+License: MIT
+Version: 1.0.0
+
+==============================================================================
+CONTENTS                                                    *ts-sql-contents*
+
+    1. Introduction ................................ |ts-sql-introduction|
+    2. Requirements ................................ |ts-sql-requirements|
+    3. Installation ................................ |ts-sql-installation|
+    4. Usage ....................................... |ts-sql-usage|
+    5. Configuration ............................... |ts-sql-configuration|
+    6. Commands .................................... |ts-sql-commands|
+    7. Functions ................................... |ts-sql-functions|
+    8. Examples .................................... |ts-sql-examples|
+
+==============================================================================
+1. INTRODUCTION                                         *ts-sql-introduction*
+
+ts-sql.nvim provides SQL syntax highlighting and formatting for template
+strings in TypeScript, JavaScript, TSX, and JSX files.
+
+Features:
+  - Automatic SQL syntax highlighting in template strings
+  - Format SQL templates with sql-formatter
+  - Preserve template interpolations during formatting
+  - Support for multiple SQL function names
+  - Configurable keybindings and auto-format on save
+
+==============================================================================
+2. REQUIREMENTS                                         *ts-sql-requirements*
+
+- Neovim >= 0.9.0
+- nvim-treesitter with TypeScript/JavaScript parsers
+- sql-formatter (via Mason, npm, or pnpx)
+
+Install treesitter parsers:
+>
+    :TSInstall typescript tsx javascript
+<
+
+==============================================================================
+3. INSTALLATION                                         *ts-sql-installation*
+
+Using lazy.nvim:
+>lua
+    {
+      "yourusername/ts-sql.nvim",
+      dependencies = { "nvim-treesitter/nvim-treesitter" },
+      ft = { "typescript", "javascript", "typescriptreact", "javascriptreact" },
+      config = function()
+        require("ts-sql").setup()
+      end,
+    }
+<
+
+==============================================================================
+4. USAGE                                                       *ts-sql-usage*
+
+SQL syntax highlighting is automatically applied to template strings when
+using configured function names (default: sql, tx, sqlClient).
+
+Example:
+>typescript
+    const users = await sql`
+      SELECT id, name, email
+      FROM users
+      WHERE active = true
+    `;
+<
+
+To format SQL templates, use:
+>
+    :FormatSQLTemplates
+<
+
+Or set up a keybinding in your configuration.
+
+==============================================================================
+5. CONFIGURATION                                       *ts-sql-configuration*
+
+Configure the plugin by calling setup():
+>lua
+    require("ts-sql").setup({
+      function_names = { "sql", "tx", "sqlClient" },
+      formatter = {
+        command = nil,  -- auto-detect
+        language = "postgresql",
+      },
+      keymaps = {
+        format = false,  -- or "<leader>fq"
+      },
+      format_on_save = false,
+    })
+<
+
+                                                       *ts-sql.function_names*
+function_names ~
+    Type: `table`
+    Default: `{ "sql", "tx", "sqlClient" }`
+
+    List of function names that indicate SQL template strings.
+
+                                                           *ts-sql.formatter*
+formatter ~
+    Type: `table`
+
+    SQL formatter configuration.
+
+    formatter.command ~
+        Type: `string|table|nil`
+        Default: `nil` (auto-detect)
+
+        Command to use for formatting. If nil, auto-detects in this order:
+        1. Mason-installed sql-formatter
+        2. pnpx sql-formatter
+
+    formatter.language ~
+        Type: `string`
+        Default: `"postgresql"`
+
+        SQL dialect for the formatter. Options: "postgresql", "mysql",
+        "mariadb", "sqlite", "db2", "pl/sql", "n1ql", "redshift", "spark",
+        "tsql"
+
+                                                            *ts-sql.keymaps*
+keymaps ~
+    Type: `table`
+
+    Keybinding configuration.
+
+    keymaps.format ~
+        Type: `string|boolean`
+        Default: `false`
+
+        Keybinding to format SQL templates. Set to false to disable.
+        Example: "<leader>fq"
+
+                                                      *ts-sql.format_on_save*
+format_on_save ~
+    Type: `boolean`
+    Default: `false`
+
+    Automatically format SQL templates when saving the buffer.
+
+==============================================================================
+6. COMMANDS                                                 *ts-sql-commands*
+
+:FormatSQLTemplates                                     *:FormatSQLTemplates*
+    Format all SQL template strings in the current buffer.
+
+    This command is automatically created when opening TypeScript,
+    JavaScript, TSX, or JSX files.
+
+==============================================================================
+7. FUNCTIONS                                               *ts-sql-functions*
+
+require("ts-sql").setup({opts})                               *ts-sql.setup()*
+    Initialize the plugin with the given configuration.
+
+    Parameters: ~
+        {opts} (table) Configuration options (see |ts-sql-configuration|)
+
+require("ts-sql").format_sql()                           *ts-sql.format_sql()*
+    Format SQL template strings in the current buffer.
+
+    This function is called by the |:FormatSQLTemplates| command.
+
+require("ts-sql").get_config()                           *ts-sql.get_config()*
+    Get the current plugin configuration.
+
+    Returns: ~
+        (table) Current configuration options
+
+==============================================================================
+8. EXAMPLES                                                 *ts-sql-examples*
+
+Basic setup with keybinding:
+>lua
+    require("ts-sql").setup({
+      keymaps = {
+        format = "<leader>fq",
+      },
+    })
+<
+
+Auto-format on save:
+>lua
+    require("ts-sql").setup({
+      format_on_save = true,
+    })
+<
+
+Custom function names:
+>lua
+    require("ts-sql").setup({
+      function_names = { "sql", "prisma", "query", "db" },
+    })
+<
+
+Custom formatter for MySQL:
+>lua
+    require("ts-sql").setup({
+      formatter = {
+        language = "mysql",
+      },
+    })
+<
+
+Manual keybinding setup:
+>lua
+    require("ts-sql").setup({
+      keymaps = {
+        format = false,
+      },
+    })
+
+    vim.keymap.set("n", "<leader>sq", "<cmd>FormatSQLTemplates<CR>", {
+      desc = "Format SQL templates",
+    })
+<
+
+==============================================================================
+vim:tw=78:ts=8:ft=help:norl:
