@@ -28,6 +28,8 @@ local function get_formatter_command(config)
   local mason_bin = vim.fn.stdpath("data") .. "/mason/bin/sql-formatter"
   if vim.fn.filereadable(mason_bin) == 1 and vim.fn.executable(mason_bin) == 1 then
     return { mason_bin, "--language", config.formatter.language }
+  elseif vim.fn.executable("sql-formatter") == 1 then
+    return { "sql-formatter", "--language", config.formatter.language }
   else
     return { "pnpx", "sql-formatter", "--language", config.formatter.language }
   end

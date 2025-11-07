@@ -34,7 +34,7 @@ Features:
 
 - Neovim >= 0.9.0
 - nvim-treesitter with TypeScript/JavaScript parsers
-- sql-formatter (via Mason, npm, or pnpx)
+- sql-formatter (via Mason, npm, pnpm, or pnpx)
 
 Install treesitter parsers:
 >
@@ -115,7 +115,8 @@ formatter ~
 
         Command to use for formatting. If nil, auto-detects in this order:
         1. Mason-installed sql-formatter
-        2. pnpx sql-formatter
+        2. System sql-formatter (in PATH)
+        3. pnpx sql-formatter
 
     formatter.language ~
         Type: `string`

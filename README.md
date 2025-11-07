@@ -11,6 +11,17 @@ A Neovim plugin that provides SQL syntax highlighting and formatting for templat
 - **Configurable**: Customize function names, formatter options, keybindings, and more
 - **Auto-format on Save**: Optional automatic formatting when saving files
 
+## Visual Demo
+
+### Without Highlight
+![Without Highlight](images/highlight-off.png)
+
+### With Highlight
+![With Highlight](images/highlight-on.png)
+
+### After Formatted
+![After Formatted](images/formatted.png)
+
 ## Requirements
 
 - Neovim >= 0.9.0
@@ -73,6 +84,18 @@ const users = await sql`
   SELECT id, name, email
   FROM users
   WHERE active = true
+`;
+```
+
+Supports type generics:
+
+```typescript
+import { sql } from "./db";
+
+const users = await sql<User>`
+SELECT id, name, email
+FROM users
+WHERE active = true
 `;
 ```
 
@@ -237,9 +260,10 @@ pnpm add -g sql-formatter
 ```
 
 The plugin will automatically use the formatter in this order of preference:
-1. Mason-installed `sql-formatter`
-2. `pnpx sql-formatter` (downloads and runs on-demand)
-3. Custom command if configured
+1. Custom command if configured
+2. Mason-installed `sql-formatter`
+3. System `sql-formatter` (in PATH)
+4. `pnpx sql-formatter` (downloads and runs on-demand)
 
 ## Supported Languages
 
@@ -286,4 +310,4 @@ MIT
 
 ## Credits
 
-Created by [Your Name]
+Created by RielJ
