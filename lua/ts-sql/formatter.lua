@@ -36,6 +36,8 @@ local function get_formatter_command(config)
 end
 
 -- Build treesitter query for function names
+-- Returns a combined query that matches multiple patterns
+-- Uses the same patterns as injections.scm for consistency
 local function build_query(function_names, lang)
   local name_list = table.concat(
     vim.tbl_map(function(name)
@@ -44,10 +46,39 @@ local function build_query(function_names, lang)
     " "
   )
 
+  -- For JavaScript (no generics support), use simpler patterns
+  if lang == "javascript" or lang == "jsx" then
+    return vim.treesitter.query.parse(
+      lang,
+      string.format(
+        [[
+          ;; Pattern 1: Direct call
+          (call_expression
+            function: (identifier) @_name
+            arguments: (template_string) @injection.content
+            (#any-of? @_name %s))
+
+          ;; Pattern 2: Awaited call
+          ((await_expression
+            (call_expression
+              function: (identifier) @_name
+              arguments: (template_string) @injection.content))
+            (#any-of? @_name %s))
+        ]],
+        name_list,
+        name_list
+      )
+    )
+  end
+
+  -- For TypeScript, use ALL patterns from injections.scm
+  -- This ensures formatting works for all cases where highlighting works
   return vim.treesitter.query.parse(
     lang,
     string.format(
       [[
+        ;; Pattern 1: call_expression with various function forms
+        ;; Handles: sql`...`, await sql`...`, sql<Type>`...`, await sql<Type>`...`
         (call_expression
           function: [
             (identifier) @_name
@@ -55,13 +86,67 @@ local function build_query(function_names, lang)
             (instantiation_expression function: (identifier) @_name)
             (non_null_expression
               (instantiation_expression
-                (await_expression
-                  (identifier) @_name)))
+                [
+                  (identifier) @_name
+                  (await_expression (identifier) @_name)
+                ]))
           ]
           arguments: (template_string) @injection.content
           (#any-of? @_name %s))
+
+        ;; Pattern 2: Multi-line generic in ternary - consequence branch
+        ((ternary_expression
+          consequence: (binary_expression
+            left: (binary_expression
+              left: (await_expression
+                (identifier) @_name))
+            right: (template_string) @injection.content))
+          (#any-of? @_name %s))
+
+        ;; Pattern 3: Multi-line generic in ternary - alternative branch
+        ((ternary_expression
+          alternative: (binary_expression
+            left: (binary_expression
+              left: (await_expression
+                (identifier) @_name))
+            right: (template_string) @injection.content))
+          (#any-of? @_name %s))
+
+        ;; Pattern 4: Standalone binary_expression (3 levels deep)
+        ;; Multi-line generics: binary(await sql, binary(type, binary(type, template)))
+        (binary_expression
+          left: (await_expression
+            (identifier) @_name)
+          right: (binary_expression
+            right: (binary_expression
+              right: (template_string) @injection.content))
+          (#any-of? @_name %s))
+
+        ;; Pattern 5: Standalone binary_expression (2 levels deep)
+        (binary_expression
+          left: (binary_expression
+            left: (await_expression
+              (identifier) @_name))
+          right: (template_string) @injection.content
+          (#any-of? @_name %s))
+
+        ;; Pattern 6: Ternary as function - alternative branch
+        ;; Structure: call_expression with ternary inside non_null_expression as function
+        (call_expression
+          function: (non_null_expression
+            (ternary_expression
+              alternative: (instantiation_expression
+                (await_expression
+                  (identifier) @_name))))
+          arguments: (template_string) @injection.content
+          (#any-of? @_name %s))
       ]],
-      name_list
+      name_list,  -- Pattern 1
+      name_list,  -- Pattern 2
+      name_list,  -- Pattern 3
+      name_list,  -- Pattern 4
+      name_list,  -- Pattern 5
+      name_list   -- Pattern 6
     )
   )
 end
@@ -245,6 +330,190 @@ function M.format_sql_in_buffer(bufnr, config)
   end
 
   vim.notify("Formatted " .. #replacements .. " SQL template string(s)", vim.log.levels.INFO)
+end
+
+-- Format SQL in visual selection
+function M.format_sql_in_selection(bufnr, config)
+  bufnr = bufnr or vim.api.nvim_get_current_buf()
+  
+  -- Get visual selection range
+  local start_pos = vim.fn.getpos("'<")
+  local end_pos = vim.fn.getpos("'>")
+  
+  local start_row = start_pos[2] - 1  -- Convert to 0-indexed
+  local end_row = end_pos[2] - 1
+  
+  -- Detect the language
+  local ft = vim.bo[bufnr].filetype
+  local lang = ft == "typescriptreact" and "tsx" or ft == "javascriptreact" and "jsx" or ft
+  
+  local ok, parser = pcall(vim.treesitter.get_parser, bufnr, lang)
+  if not ok then
+    vim.notify("Treesitter parser not available for " .. lang, vim.log.levels.WARN)
+    return
+  end
+  
+  local tree = parser:parse()[1]
+  local root = tree:root()
+  
+  local query = build_query(config.function_names, lang)
+  local formatter_command = get_formatter_command(config)
+  
+  -- Collect all targets that overlap with the selection
+  local all_targets = {}
+  for id, node in query:iter_captures(root, bufnr, 0, -1) do
+    if query.captures[id] == "injection.content" then
+      local node_start_row, start_col, node_end_row, end_col = node:range()
+      
+      -- Check if this node overlaps with the selection
+      if node_start_row <= end_row and node_end_row >= start_row then
+        table.insert(all_targets, {
+          start_row = node_start_row,
+          start_col = start_col,
+          end_row = node_end_row,
+          end_col = end_col,
+        })
+      end
+    end
+  end
+  
+  -- Filter out nested targets
+  local targets = {}
+  for _, target in ipairs(all_targets) do
+    local is_nested = false
+    for _, other in ipairs(all_targets) do
+      if target ~= other and is_inside(target, other) then
+        is_nested = true
+        break
+      end
+    end
+    if not is_nested then
+      table.insert(targets, target)
+    end
+  end
+  
+  if #targets == 0 then
+    vim.notify("No SQL template strings found in selection", vim.log.levels.INFO)
+    return
+  end
+  
+  local replacements = {}
+  
+  for _, t in ipairs(targets) do
+    local lines = vim.api.nvim_buf_get_text(bufnr, t.start_row, t.start_col, t.end_row, t.end_col, {})
+    local sql_text = table.concat(lines, "\n")
+    
+    -- Strip out backticks for formatting (if present)
+    sql_text = sql_text:gsub("^%s*`", ""):gsub("`%s*$", "")
+    
+    -- Replace template interpolations with placeholders (reuse from main function)
+    local replaced = {}
+    local placeholder_count = 0
+    local function replace_interpolations(text)
+      local result = ""
+      local i = 1
+      
+      while i <= #text do
+        if text:sub(i, i + 1) == "${" then
+          local brace_depth = 1
+          local j = i + 2
+          local in_string = false
+          local string_char = nil
+          local in_template = false
+          
+          while j <= #text and brace_depth > 0 do
+            local char = text:sub(j, j)
+            local prev_char = j > 1 and text:sub(j - 1, j - 1) or ""
+            
+            if not in_template and (char == '"' or char == "'") and prev_char ~= "\\" then
+              if in_string and char == string_char then
+                in_string = false
+                string_char = nil
+              elseif not in_string then
+                in_string = true
+                string_char = char
+              end
+            elseif char == "`" and prev_char ~= "\\" then
+              in_template = not in_template
+            elseif not in_string and not in_template then
+              if char == "{" then
+                brace_depth = brace_depth + 1
+              elseif char == "}" then
+                brace_depth = brace_depth - 1
+              end
+            end
+            
+            j = j + 1
+          end
+          
+          if brace_depth == 0 then
+            local expr = text:sub(i + 2, j - 2)
+            placeholder_count = placeholder_count + 1
+            table.insert(replaced, expr)
+            result = result .. "___PLACEHOLDER_" .. placeholder_count .. "___"
+            i = j
+          else
+            result = result .. text:sub(i, i)
+            i = i + 1
+          end
+        else
+          result = result .. text:sub(i, i)
+          i = i + 1
+        end
+      end
+      
+      return result
+    end
+    
+    sql_text = replace_interpolations(sql_text)
+    
+    -- Format SQL
+    local formatted = vim.fn.system(formatter_command, sql_text)
+    
+    if vim.v.shell_error ~= 0 or formatted:match("Parse error") then
+      vim.notify("SQL formatter error:\n" .. formatted, vim.log.levels.ERROR)
+      goto continue
+    end
+    
+    -- Restore placeholders
+    for idx, expr in ipairs(replaced) do
+      formatted = formatted:gsub("___PLACEHOLDER_" .. idx .. "___", "${" .. expr .. "}")
+    end
+    
+    formatted = formatted:gsub("\n+$", "")
+    
+    -- Determine indentation
+    local prefix_line = vim.api.nvim_buf_get_lines(bufnr, t.start_row, t.start_row + 1, false)[1] or ""
+    local base_indent = prefix_line:match("^(%s*)") or ""
+    local sw = vim.bo[bufnr].shiftwidth > 0 and string.rep(" ", vim.bo[bufnr].shiftwidth) or "  "
+    
+    -- Re-indent formatted SQL
+    local indented = {}
+    for line in formatted:gmatch("[^\n]+") do
+      table.insert(indented, base_indent .. sw .. line)
+    end
+    
+    -- Wrap with backticks
+    local final = "`\n" .. table.concat(indented, "\n") .. "\n" .. base_indent .. "`"
+    
+    table.insert(replacements, {
+      range = t,
+      new_text = vim.split(final, "\n"),
+    })
+    
+    ::continue::
+  end
+  
+  -- Sort replacements in reverse order
+  table.sort(replacements, function(a, b)
+    return a.range.start_row > b.range.start_row
+  end)
+  
+  for _, r in ipairs(replacements) do
+    vim.api.nvim_buf_set_text(bufnr, r.range.start_row, r.range.start_col, r.range.end_row, r.range.end_col, r.new_text)
+  end
+  
+  vim.notify("Formatted " .. #replacements .. " SQL template string(s) in selection", vim.log.levels.INFO)
 end
 
 return M

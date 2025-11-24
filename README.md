@@ -26,7 +26,8 @@ A Neovim plugin that provides SQL syntax highlighting and formatting for templat
 
 - Neovim >= 0.9.0
 - [nvim-treesitter](https://github.com/nvim-treesitter/nvim-treesitter) with TypeScript/JavaScript parsers installed
-- `sql-formatter` (installed via Mason or available via `pnpx`)
+- TreeSitter `sql` parser installed (`:TSInstall sql`)
+- `sql-formatter` for formatting (installed via Mason or available via `pnpx`)
 
 ## Installation
 
@@ -101,7 +102,13 @@ WHERE active = true
 
 ### Formatting SQL Templates
 
-Format SQL template strings using the `:FormatSQLTemplates` command:
+#### Format Entire Buffer
+
+Format all SQL template strings in the current buffer:
+
+```vim
+:FormatSQLTemplates
+```
 
 ```typescript
 // Before formatting
@@ -118,6 +125,30 @@ const query = sql`
   WHERE
     active = true
 `;
+```
+
+#### Format Visual Selection
+
+Format only SQL template strings within your visual selection:
+
+1. **Visual line mode (V)**: Select entire lines
+2. **Visual mode (v)**: Select specific characters
+3. **Text object (vi`)**: Select inside template string
+
+Then run:
+```vim
+:FormatSQLSelection
+```
+
+Or use your configured keybinding in visual mode.
+
+**Example:**
+```typescript
+// Select just this line and format
+const q1 = sql`select * from users where id=1`;
+
+// This won't be formatted
+const q2 = sql`select * from posts where user_id=2`;
 ```
 
 The formatter intelligently preserves TypeScript/JavaScript interpolations:
@@ -284,12 +315,57 @@ The plugin will automatically use the formatter in this order of preference:
 
 ## Troubleshooting
 
-### Syntax highlighting not working
+### SQL syntax highlighting not working
 
-Make sure you have the TypeScript/JavaScript treesitter parsers installed:
+**Most common cause:** You haven't called `setup()` or the SQL parser isn't installed.
 
-```vim
-:TSInstall typescript tsx javascript
+1. **Make sure you called `setup()`:**
+   ```lua
+   require("ts-sql").setup()
+   ```
+   This is **required** to register the injection queries with TreeSitter.
+
+2. **Install the SQL TreeSitter parser:**
+   ```vim
+   :TSInstall sql
+   ```
+   SQL highlighting requires both the TypeScript AND SQL parsers.
+
+3. **Verify parsers are installed:**
+   ```vim
+   :TSInstallInfo
+   ```
+   You should see `typescript` (or `tsx`) and `sql` both installed.
+
+4. **Clear query cache and reload:**
+   ```vim
+   :lua vim.treesitter.query.invalidate_cache()
+   :e
+   ```
+
+5. **Test the diagnostic:**
+   Open a file with SQL template strings and run:
+   ```vim
+   :luafile tests/test-live-highlighting.lua
+   ```
+   This will tell you exactly what's working and what's not.
+
+### Supported patterns
+
+These patterns are detected and highlighted:
+
+✅ **Working patterns:**
+- `sql\`SELECT...\`` - Direct call
+- `sql<Type>\`SELECT...\`` - With type parameters
+- `await sql\`SELECT...\`` - Awaited
+- `await sql<Type>\`SELECT...\`` - Awaited with generics
+
+⚠️ **Known limitation:** Ternary alternate branches may not highlight due to TreeSitter parsing quirks:
+```typescript
+// ✅ This works (consequent/true branch)
+const x = condition
+  ? sql<User[]>`SELECT * FROM users`
+  : sql<User[]>`SELECT * FROM admins`;  // ❌ May not work (alternate/false branch)
 ```
 
 ### Formatter not found
@@ -299,6 +375,8 @@ Install `sql-formatter` via Mason or npm/pnpm, or the plugin will use `pnpx` whi
 ### SQL not detected
 
 Check that your function names match the configured `function_names`. The default values are `sql`, `tx`, and `sqlClient`.
+
+For more detailed troubleshooting, see [tests/TROUBLESHOOTING.md](tests/TROUBLESHOOTING.md).
 
 ## Contributing
 
